@@ -1,0 +1,519 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "AWS CFN Stack Wordpress on a single EC2 and Include ELB" 
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: "Simple WordPress + MySQL server running on EC2"
+      Parameters:
+      - Vpc
+      - VpcId
+      - SubnetAId
+      - SubnetBId
+      - KeyName
+      - InstanceType
+      - SSHLocation
+      - MYSQLLocation
+      - HTTPLocation
+      - DBName
+      - DBUser
+      - DBPassword
+      - DBRootPassword
+
+Parameters:
+
+  Vpc:
+    Description: "VPC Name"
+    Type: "String"
+    Default: "test"
+    AllowedValues: [ "test" ]
+  VpcId:
+    Description: "VPC Id"
+    Type: "AWS::EC2::VPC::Id"
+    Default: "vpc-03d162c5b0b754e07"
+  SubnetAId:
+    Description: "Subnet Zone A Id"
+    Type: "AWS::EC2::Subnet::Id"
+    Default: "subnet-0148acf0a58ee7ed7"
+  SubnetBId:
+    Description: "Subnet Zone B Id"
+    Type: "AWS::EC2::Subnet::Id"
+    Default: "subnet-0f5cd4c89c89a9a6c"
+  KeyName:
+    Description: "Name of an existing EC2 KeyPair to enable SSH access to the instance"
+    Type: "AWS::EC2::KeyPair::KeyName"
+    Default: "default-ec2"
+  InstanceType:
+    Description: "WebServer EC2 instance type"
+    Type: String
+    Default: "t2.micro"
+    AllowedValues: [ "t2.micro", "t2.small", "t2.medium", "t2.large" ]
+    ConstraintDescription: "Enter valid EC2 instance type"
+  SSHLocation:
+    Description: The IP address range that can be used to SSH to the EC2 instance
+    Type: String
+    MinLength: "9"
+    MaxLength: "18"
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: "Enter valid IP CIDR range as X.X.X.X/X."
+  MYSQLLocation:
+    Description: "The IP address CIDR that can be used to MYSQL to the EC2 instance"
+    Type: String
+    MinLength: "9"
+    MaxLength: "18"
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: "Enter a valid IP CIDR range as X.X.X.X/X."
+  HTTPLocation:
+    Description: The IP address range that can be used to HTTP and HTTPS to the EC2 instance
+    Type: String
+    MinLength: "9"
+    MaxLength: "18"
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: "Enter a valid IP CIDR range as X.X.X.X/X."
+  DBName:
+    Default: "wordpressdb"
+    Description: "WordPress database name"
+    Type: String
+    MinLength: "1"
+    MaxLength: "64"
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: "Must begin with a letter and contain only alphanumeric characters"
+  DBUser:
+    Default: "admin"
+    Description: "WordPress database admin account username"
+    Type: String
+    MinLength: "1"
+    MaxLength: "16"
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: "Must begin with a letter and contain only alphanumeric characters"
+  DBPassword:
+    NoEcho: "true"
+    Default: "MyPassword2019"
+    Description: "The WordPress database admin account password"
+    Type: String
+    MinLength: "8"
+    MaxLength: "32"
+    AllowedPattern: "[a-zA-Z0-9]*"
+    ConstraintDescription: "Must contain only alphanumeric characters"
+  DBRootPassword:
+    NoEcho: "true"
+    Default: "MyPassword2019"
+    Description: "MySQL root password"
+    Type: String
+    MinLength: "8"
+    MaxLength: "32"
+    AllowedPattern: "[a-zA-Z0-9]*"
+    ConstraintDescription: "Must contain only alphanumeric characters"
+
+Mappings:
+  
+  AWSInstanceType2Arch:
+    t2.micro:
+      Arch: HVM64
+    t2.small:
+      Arch: HVM64
+    t2.medium:
+      Arch: HVM64
+    t2.large:
+      Arch: HVM64
+  AWSInstanceType2NATArch:
+    t2.micro:
+      Arch: NATHVM64
+    t2.small:
+      Arch: NATHVM64
+    t2.medium:
+      Arch: NATHVM64
+    t2.large:
+      Arch: NATHVM64
+  AWSRegionArch2AMI:
+    us-east-1:
+      HVM64: ami-0ff8a91507f77f867
+      HVMG2: ami-0a584ac55a7631c0c
+    ap-southeast-2:
+      HVM64: ami-09b42976632b27e9b
+      HVMG2: ami-0a9ce9fecc3d1daf8
+
+Resources:
+
+  Role: 
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Join [ "-", [ !Ref "Vpc", "wordpress", "role" ] ]
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+
+  InstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      InstanceProfileName: !Join [ "-", [ !Ref "Vpc", "wordpress", "profile" ] ]
+      Path: "/"
+      Roles:
+        - !Ref "Role"
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref "VpcId"
+      GroupName: !Join [ "-", [ !Ref "Vpc", "alb", "sg" ] ]
+      GroupDescription: "Load Balancer SG rules"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: "80"
+          ToPort: "80"
+          CidrIp: !Ref "HTTPLocation"
+        - IpProtocol: tcp
+          FromPort: "443"
+          ToPort: "443"
+          CidrIp: !Ref "HTTPLocation"
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: "80"
+          ToPort: "80"
+          CidrIp: !Ref "HTTPLocation"
+        - IpProtocol: tcp
+          FromPort: "443"
+          ToPort: "443"
+          CidrIp: !Ref "HTTPLocation"        
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "alb", "sg" ] ]
+
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref "VpcId"
+      GroupName: !Join [ "-", [ !Ref "Vpc", "wordpress", "sg" ] ]
+      GroupDescription: "WebServer Wordpress SG rules"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: "22"
+          ToPort: "22"
+          CidrIp: !Ref "SSHLocation"
+        - IpProtocol: tcp
+          FromPort: "3306"
+          ToPort: "3306"
+          CidrIp: !Ref "MYSQLLocation"
+      SecurityGroupEgress:
+        -
+          IpProtocol: "icmp"
+          FromPort: "-1"
+          ToPort: "-1"
+          CidrIp: !Ref "SSHLocation"
+        - IpProtocol: tcp
+          FromPort: "22"
+          ToPort: "22"
+          CidrIp: !Ref "SSHLocation"
+        - 
+          IpProtocol: tcp
+          FromPort: "3306"
+          ToPort: "3306"
+          CidrIp: !Ref "MYSQLLocation"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "wordpress", "sg" ] ]
+
+  InternetSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref "VpcId"
+      GroupName: !Join [ "-", [ !Ref "Vpc", "internet", "sg" ] ]
+      GroupDescription: "Internet SG rules"
+      SecurityGroupIngress:
+        -
+          Description: "ICMP Ping from VPC network"
+          IpProtocol: "icmp"
+          FromPort: "-1"
+          ToPort: "-1"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-vpc-cidr"
+      SecurityGroupEgress:
+        -
+          Description: "DHCP UDP access Ipv4"
+          IpProtocol: "udp"
+          FromPort: "68"
+          ToPort: "68"
+          CidrIp: "0.0.0.0/0"
+        -
+          Description: "DHCP UDP access Ipv6"
+          IpProtocol: "udp"
+          FromPort: "546"
+          ToPort: "546"
+          CidrIpv6: "fe80:0:0:0:0:0:0:0/64"
+        -
+          Description: "NTP TCP access"
+          IpProtocol: "tcp"
+          FromPort: "123"
+          ToPort: "123"
+          CidrIp: "0.0.0.0/0"
+        -
+          Description: "NTP UDP access"
+          IpProtocol: "udp"
+          FromPort: "123"
+          ToPort: "123"
+          CidrIp: "0.0.0.0/0"
+        -
+          Description: "DNS UDP access"
+          IpProtocol: "udp"
+          FromPort: "53"
+          ToPort: "53"
+          CidrIp: "0.0.0.0/0"
+        -
+          Description: "DNS TCP access"
+          IpProtocol: "tcp"
+          FromPort: "53"
+          ToPort: "53"
+          CidrIp: "0.0.0.0/0"
+        -
+          Description: "HTTP access"
+          IpProtocol: "tcp"
+          FromPort: "80"
+          ToPort: "80"
+          CidrIp: "0.0.0.0/0"
+        -
+          Description: "HTTPS access"
+          IpProtocol: "tcp"
+          FromPort: "443"
+          ToPort: "443"
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "internet", "sg" ] ]
+
+  AlbtoWebServerEgressRule:
+    Type: "AWS::EC2::SecurityGroupEgress"
+    DependsOn: "WebServerSecurityGroup"
+    Properties:
+      GroupId: !Ref "AlbSecurityGroup"
+      IpProtocol: "tcp"
+      FromPort: "80"
+      ToPort: "80"
+      DestinationSecurityGroupId: !Ref "WebServerSecurityGroup"
+
+  AlbtoWebServerIngressRule:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn: "AlbSecurityGroup"
+    Properties:
+      GroupId: !Ref "WebServerSecurityGroup"
+      IpProtocol: "tcp"
+      FromPort: "80"
+      ToPort: "80"
+      SourceSecurityGroupId: !Ref "AlbSecurityGroup"
+
+  LoadBalancer:
+    Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
+    Properties:
+      Name: !Join [ "-", [ !Ref "Vpc", "wordpress", "alb" ] ]   
+      LoadBalancerAttributes:
+        -
+          Key: "idle_timeout.timeout_seconds"
+          Value: '60'
+        -
+          Key: "deletion_protection.enabled"
+          Value: "false"
+        -
+          Key: "access_logs.s3.enabled"
+          Value: "false"
+        - 
+          Key: "routing.http2.enabled"
+          Value: "true"
+      Scheme: "internet-facing"
+      SecurityGroups:
+        - !Ref "AlbSecurityGroup"
+      Subnets:
+        - !Ref "SubnetAId"
+        - !Ref "SubnetBId"
+      Type: "application"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "alb" ] ]
+
+  HttpListener:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      DefaultActions:
+        -
+          Type: "forward"
+          TargetGroupArn: !Ref "TargetGroup"
+      LoadBalancerArn: !Ref "LoadBalancer"
+      Port: 80
+      Protocol: "HTTP"
+
+  TargetGroup:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      Name: !Join [ "-", [ !Ref "Vpc", "wordpress", "tg" ] ]      
+      Protocol: "HTTP"
+      Port: 80
+      TargetType: "instance"
+      Targets:
+      - Id: !Ref "WebServer"
+      HealthCheckPath: "/status.htm"
+      HealthCheckProtocol: "HTTP"
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      HealthCheckTimeoutSeconds: 5
+      HealthCheckIntervalSeconds: 30
+      Matcher:
+        HttpCode: "200"
+      VpcId: !Ref "VpcId"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "wordpress", "tg" ] ]
+
+  WebServer:
+    Type: AWS::EC2::Instance
+    DeletionPolicy: Delete
+    Properties:
+      ImageId:
+        Fn::FindInMap:
+        - AWSRegionArch2AMI
+        - Ref: AWS::Region
+        - Fn::FindInMap:
+          - AWSInstanceType2Arch
+          - Ref: InstanceType
+          - Arch
+      InstanceType: !Ref "InstanceType"
+      KeyName: !Ref "KeyName"
+      IamInstanceProfile: !Ref "InstanceProfile"
+      SecurityGroupIds:
+        - !Ref "WebServerSecurityGroup"
+        - !Ref "InternetSecurityGroup"
+      SubnetId: !Ref "SubnetAId"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "wordpress" ] ]
+      UserData:
+        "Fn::Base64": 
+          !Sub |
+            #!/bin/bash
+            yum update -y aws-cfn-bootstrap
+            /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource WebServer --configsets wordpress_install --region ${AWS::Region}
+            yum -y update
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource WebServer --region ${AWS::Region}
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          wordpress_install:
+          - install_cfn
+          - install_wordpress
+          - configure_wordpress
+        install_cfn:
+          files:
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+                verbose=true
+                interval=5
+              mode: "000400"
+              owner: root
+              group: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.EC2.Metadata.AWS::CloudFormation::Init
+                action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource WebServer --configsets wordpress_install --region ${AWS::Region}
+              mode: "000400"
+              owner: root
+              group: root
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: "true"
+                ensureRunning: "true"
+                files:
+                - "/etc/cfn/cfn-hup.conf"
+                - "/etc/cfn/hooks.d/cfn-auto-reloader.conf"
+        install_wordpress:
+          packages:
+            yum:
+              php: []
+              php-mysql: []
+              mysql: []
+              mysql-server: []
+              mysql-devel: []
+              mysql-libs: []
+              httpd: []
+          sources:
+            /var/www/html: http://wordpress.org/latest.tar.gz
+          services:
+            sysvinit:
+              httpd:
+                enabled: "true"
+                ensureRunning: "true"
+              mysqld:
+                enabled: "true"
+                ensureRunning: "true"
+          files:
+            /tmp/setup.mysql:
+              content: !Sub |
+                CREATE DATABASE ${DBName};
+                CREATE USER '${DBUser}'@'localhost' IDENTIFIED BY '${DBPassword}';
+                CREATE USER '${DBUser}'@'%' IDENTIFIED BY '${DBPassword}';
+                GRANT ALL PRIVILEGES ON ${DBName}.* TO '${DBUser}'@'localhost';
+                GRANT ALL PRIVILEGES ON ${DBName}.* TO '${DBUser}'@'%';
+                CREATE USER 'root'@'%' IDENTIFIED BY '${DBRootPassword}';
+                GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost';
+                GRANT ALL PRIVILEGES ON *.* TO 'root'@'%';
+                FLUSH PRIVILEGES;
+            /tmp/create-wp-config:
+              content: !Sub |
+                #!/bin/bash
+                cp /var/www/html/wordpress/wp-config-sample.php /var/www/html/wordpress/wp-config.php
+                sed -i 's/database_name_here/${DBName}/g' /var/www/html/wordpress/wp-config.php
+                sed -i 's/username_here/${DBUser}/g' /var/www/html/wordpress/wp-config.php
+                sed -i 's/password_here/${DBPassword}/g' /var/www/html/wordpress/wp-config.php
+              mode: "000500"
+              owner: root
+              group: root
+            /var/www/html/status.htm:
+              content: !Sub |
+                <!DOCTYPE html>
+                <html>
+                  <body>
+                    <p>OK</p>
+                  </body>
+                </html>
+              mode: "000555"
+              owner: root
+              group: root
+        configure_wordpress:
+          commands:
+            01_set_mysql_root_password:
+              command: !Join [ "", [ "mysqladmin -u root password '", !Ref "DBRootPassword", "'" ] ]
+              test: !Join [ "", [ "$(mysql ", !Ref "DBName", " -u root --password='", !Ref "DBRootPassword" ,"' >/dev/null 2>&1 </dev/null); (( $? != 0 ))" ] ]
+            02_create_database:
+              command: !Join [ "", [ "mysql -u root --password='", !Ref "DBRootPassword", "' < /tmp/setup.mysql" ] ]
+              test: !Join [ "", [ "$(mysql ", !Ref "DBName", " -u root --password='", !Ref "DBRootPassword" ,"' >/dev/null 2>&1 </dev/null); (( $? != 0 ))" ] ]
+            03_configure_wordpress:
+              command: "/tmp/create-wp-config"
+              cwd: "/var/www/html/wordpress"
+
+Outputs:
+
+  WebsiteURL:
+    Description: "WordPress Sample Website"
+    Value: !Join [ "", [ "http://", !GetAtt [ "LoadBalancer", "DNSName" ], "/wordpress" ] ]
+

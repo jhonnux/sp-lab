@@ -1,0 +1,584 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "RDS database configuration via AWS CloudFormation"
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: "RDS Parameters configuration (read below carefully)"
+      Parameters:
+      - Vpc
+      - OfficeWAN
+      - DeletionProtection
+      - Engine
+      - DBInstanceClass
+      - ReplicaDB
+      - DBName
+      - DBSnapshotIdentifier
+      - DBBackupRetentionPeriod
+      - DBMasterUsername
+      - DBMasterUserPassword
+      - KMSKey
+      - PreferredBackupWindow
+      - PreferredMaintenanceWindow
+
+Parameters:
+
+  Vpc:
+    Description: "Select VPC to Deploy"
+    Type: "String"
+    Default: "dev"
+    AllowedValues: [ "dev", "test", "production" ]
+  OfficeWAN:
+    Type: "String"
+    Description: "Enter your office WAN IP Address"
+    Default: "202.159.160.20/32"
+    MinLength: "9"
+    MaxLength: "18"
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: "Enter a valid IP CIDR range as X.X.X.X/X."
+  Engine:
+    Description: "Database engine that you want to use for this DB cluster."
+    Type: String
+    AllowedValues: [ "aurora", "aurora-mysql", "aurora-postgresql" ]
+    Default: "aurora-mysql"
+  DBName:
+    Description: "Database Name (only enter a value if you want to create a new RDS cluster)"
+    Type: String
+    Default: "Wordpressdb"
+  DBSnapshotIdentifier:
+    Description: "DB cluster snapshot identifier from which you want to restore (leave blank to create an empty cluster)."
+    Type: String
+    Default: ""
+  DBInstanceClass:
+    Description: "The instance type of database server"
+    Type: String
+    Default: "db.t2.small"
+    AllowedValues: [ "db.t2.small", "db.t2.medium" ]
+  DBBackupRetentionPeriod:
+    Description: "The number of days to keep snapshots of the RDS cluster."
+    Type: Number
+    MinValue: 1
+    MaxValue: 35
+    Default: 1
+  DBMasterUsername:
+    Description: "Master username for the DB instance (ignored when DBSnapshotIdentifier is set, value used from snapshot)"
+    Type: "String"
+    Default: master
+  DBMasterUserPassword:
+    Description: "Master password for the DB instance (ignored when DBSnapshotIdentifier is set, value used from snapshot)"
+    Type: String
+    NoEcho: true
+    Default: ""
+  DeletionProtection: 
+    Description: "The database cluster can't be deleted when this value is set to true. If you want to delete a stack with a protected cluster, update this value to false before you delete the stack"
+    Type: String
+    Default: "false"
+    AllowedValues: [ "true", "false" ]
+  KMSKey:
+    Description: "Select KMS Key to be used on this Cluster, if select new a new KMS will be created"
+    Type: String
+    Default: "rds"
+    AllowedValues: [ "rds", "new" ]  
+  ReplicaDB:
+    Description: "Enable read replica database on this Cluster"
+    Type: String
+    Default: "false"
+    AllowedValues: [true, false]  
+  PreferredBackupWindow:
+    Description: "The daily time range (in UTC) during which you want to create automated backups"
+    Type: String
+    Default: "15:00-16:00"
+  PreferredMaintenanceWindow:
+    Description: "The weekly time range (in UTC) during which system maintenance can occur"
+    Type: String
+    Default: "sat:17:00-sat:18:00"
+
+Mappings:
+
+  EngineMap:
+    "aurora":
+      EngineVersion: "5.6.10a"
+      Port: 3306
+      ClusterParameterGroupFamily: "aurora5.6"
+      ParameterGroupFamily: "aurora5.6"
+    "aurora-mysql":
+      EngineVersion: "5.7.12"
+      Port: 3306
+      ClusterParameterGroupFamily: "aurora-mysql5.7"
+      ParameterGroupFamily: "aurora-mysql5.7"
+    "aurora-postgresql":
+      EngineVersion: "9.6.3"
+      Port: 5432
+      ClusterParameterGroupFamily: "aurora-postgresql9.6"
+      ParameterGroupFamily: "aurora-postgresql9.6"
+
+  TagValues:
+    Details:
+      Company: "acmecorp"   # Enter fixed value for company name
+      Department: "devops"  # Enter fixed value Deparment name
+      Product: "rds"    # Exter fixed value as required
+      Application: "aurora"    # Enter fixed value as required
+      CostCenter: "99999"  # This is a Sample, can be any value defined from accounts team or their ERP software
+
+  KMSKeyValues:
+    "rds":
+      KeyArn: "arn:aws:kms:ap-southeast-2:913045264868:key/fa3a6738-151a-4a42-973f-1b8a2c0670cb"
+
+Conditions:
+  HasDBSnapshotIdentifier: !Not [ !Equals [ !Ref DBSnapshotIdentifier, "" ] ]
+  HasReplicaDB: !Equals [ !Ref ReplicaDB, true]
+  NewKMSKey: !Equals [ !Ref KMSKey, "new" ]
+
+Resources:
+  
+  # Setup RDS EC2 Security Group either test or production environment
+  ClusterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: 
+        Fn::ImportValue:
+          !Sub "${Vpc}-vpc-id"
+      GroupName: !Join [ "-", [ !Ref "Vpc", "rdscluster", "sg" ] ]
+      GroupDescription: !Join [ " ", [ !Ref "Vpc", "rdscluster", "security group rules" ] ]
+      SecurityGroupIngress:
+        # VPC Selected (Dev, Test or Production) SQL access ingress rules
+        - 
+          Description: !Join [ "", [ "SQL access from ", !Ref "Vpc", "-vpc", "ECS cluster" ] ]
+          IpProtocol: tcp
+          FromPort: !FindInMap [EngineMap, !Ref Engine, Port]
+          ToPort: !FindInMap [EngineMap, !Ref Engine, Port]
+          SourceSecurityGroupId:
+            Fn::ImportValue:
+              !Sub "${Vpc}-ecs-instance-sg-id"
+        - 
+          Description: !Join [ "", [ "SQL access from ", !Ref "Vpc", "-vpc", "Wordpress instances" ] ]
+          IpProtocol: tcp
+          FromPort: !FindInMap [EngineMap, !Ref Engine, Port]
+          ToPort: !FindInMap [EngineMap, !Ref Engine, Port]
+          SourceSecurityGroupId:
+            Fn::ImportValue:
+              !Sub "${Vpc}-wordpress-instance-sg-id"
+        - 
+          Description: !Join [ "", [ "SQL access from ", !Ref "Vpc", "-vpc", "public subnet zone", "1" ] ]
+          IpProtocol: tcp
+          FromPort: !FindInMap [EngineMap, !Ref Engine, Port]
+          ToPort: !FindInMap [EngineMap, !Ref Engine, Port]
+          CidrIp: 
+            Fn::ImportValue:
+              !Sub "${Vpc}-public-subnet-cidr-1-id"
+        - 
+          Description: !Join [ "", [ "SQL access from ", !Ref "Vpc", "-vpc", "public subnet zone", "2" ] ]
+          IpProtocol: tcp
+          FromPort: !FindInMap [EngineMap, !Ref Engine, Port]
+          ToPort: !FindInMap [EngineMap, !Ref Engine, Port]
+          CidrIp: 
+            Fn::ImportValue:
+              !Sub "${Vpc}-public-subnet-cidr-2-id"
+        - 
+          Description: !Join [ "", [ "SQL access from ", !Ref "Vpc", "-vpc", "application subnet zone", "1" ] ]
+          IpProtocol: tcp
+          FromPort: !FindInMap [EngineMap, !Ref Engine, Port]
+          ToPort: !FindInMap [EngineMap, !Ref Engine, Port]
+          CidrIp: 
+            Fn::ImportValue:
+              !Sub "${Vpc}-application-subnet-cidr-1-id"
+        - 
+          Description: !Join [ "", [ "SQL access from ", !Ref "Vpc", "-vpc", "application subnet zone", "2" ] ]
+          IpProtocol: tcp
+          FromPort: !FindInMap [EngineMap, !Ref Engine, Port]
+          ToPort: !FindInMap [EngineMap, !Ref Engine, Port]
+          CidrIp: 
+            Fn::ImportValue:
+              !Sub "${Vpc}-application-subnet-cidr-2-id"
+        -
+          Description: "SQL access from Office WAN"
+          IpProtocol: "tcp"
+          FromPort: !FindInMap [EngineMap, !Ref Engine, Port]
+          ToPort: !FindInMap [EngineMap, !Ref Engine, Port]
+          CidrIp: !Ref "OfficeWAN"
+
+      SecurityGroupEgress:
+        - 
+          Description: !Join [ "", [ "SQL access to ", !Ref "Vpc", "-vpc", "ECS cluster" ] ]
+          IpProtocol: tcp
+          FromPort: !FindInMap [EngineMap, !Ref Engine, Port]
+          ToPort: !FindInMap [EngineMap, !Ref Engine, Port]
+          SourceSecurityGroupId:
+            Fn::ImportValue:
+              !Sub "${Vpc}-ecs-instance-sg-id"
+        - 
+          Description: !Join [ "", [ "SQL access to ", !Ref "Vpc", "-vpc", "Wordpress instances" ] ]
+          IpProtocol: tcp
+          FromPort: !FindInMap [EngineMap, !Ref Engine, Port]
+          ToPort: !FindInMap [EngineMap, !Ref Engine, Port]
+          SourceSecurityGroupId:
+            Fn::ImportValue:
+              !Sub "${Vpc}-wordpress-instance-sg-id"
+        -
+          Description: "SQL access to Office WAN"
+          IpProtocol: "tcp"
+          FromPort: !FindInMap [EngineMap, !Ref Engine, Port]
+          ToPort: !FindInMap [EngineMap, !Ref Engine, Port]
+          CidrIp: !Ref "OfficeWAN"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "rdscluster", "sg" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "Vpc"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  # ECS Cluster egress rule
+  ECSClusterEgressRule:
+    Type: "AWS::EC2::SecurityGroupEgress"
+    Properties:
+      Description: !Join [ "", [ "ECS cluster ", !Ref "Vpc", "-vpc to RDS Cluster SQL access" ] ]
+      GroupId:
+        Fn::ImportValue:
+          !Sub "${Vpc}-ecs-instance-sg-id"
+      IpProtocol: "tcp"
+      FromPort: !FindInMap [EngineMap, !Ref Engine, Port]
+      ToPort: !FindInMap [EngineMap, !Ref Engine, Port]
+      DestinationSecurityGroupId: !Ref "ClusterSecurityGroup"
+
+#  Wordpress instances egress Rule
+  WordpressInstanceEgressRule:
+    Type: "AWS::EC2::SecurityGroupEgress"
+    Properties:
+      Description: !Join [ "", [ "Wordpress instances ", !Ref "Vpc", "-vpc to RDS Cluster SQL access" ] ]
+      GroupId:
+        Fn::ImportValue:
+          !Sub "${Vpc}-wordpress-instance-sg-id"
+      IpProtocol: "tcp"
+      FromPort: !FindInMap [EngineMap, !Ref Engine, Port]
+      ToPort: !FindInMap [EngineMap, !Ref Engine, Port]
+      DestinationSecurityGroupId: !Ref "ClusterSecurityGroup"
+
+  Key:
+    Condition: NewKMSKey
+    DeletionPolicy: Retain
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Join [ "", [ "KMS key for ", !Ref "Vpc", " environment" ] ]
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Principal:
+            AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+          Action: "kms:*"
+          Resource: "*"
+        - Effect: Allow
+          Principal:
+            AWS: "*"
+          Action:
+          - "kms:Encrypt"
+          - "kms:Decrypt"
+          - "kms:ReEncrypt*"
+          - "kms:GenerateDataKey*"
+          - "kms:CreateGrant"
+          - "kms:ListGrants"
+          - "kms:DescribeKey"
+          Resource: "*"
+          Condition:
+            StringEquals:
+              "kms:CallerAccount": !Ref "AWS::AccountId"
+              "kms:ViaService": !Sub "rds.${AWS::Region}.amazonaws.com"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "rdscluster", "kmskey" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "Vpc"
+        -
+          Key: Region
+          Value: "Global"
+
+  KeyAlias:
+    Condition: NewKMSKey
+    DeletionPolicy: Retain
+    Type: "AWS::KMS::Alias"
+    Properties:
+      AliasName: !Sub "alias/${AWS::StackName}"
+      TargetKeyId: !Ref Key
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Join [ "-", [ !Ref "Vpc", "rdscluster", "db subnet group" ] ]
+      DBSubnetGroupName: !Join [ "-", [ !Ref "Vpc", "rdscluster", "dbsubnetgroup" ] ]
+      SubnetIds:
+        - Fn::ImportValue:
+            !Sub "${Vpc}-datastore-subnet-1-id"
+        - Fn::ImportValue:
+            !Sub "${Vpc}-datastore-subnet-2-id"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "rdscluster", "dbsubnetgroup" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "Vpc"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  DBClusterParameterGroup:
+    Type: AWS::RDS::DBClusterParameterGroup
+    Properties:
+      Description: !Join [ "-", [ !Ref "Vpc", "rdscluster", "db cluster parameter group" ] ]
+      Family: !FindInMap [EngineMap, !Ref Engine, ClusterParameterGroupFamily]
+      Parameters:
+        time_zone: "Australia/Sydney"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "rdscluster", "dbclusterparamgroup" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenterx
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "Vpc"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  DBCluster:
+#    DeletionPolicy: Snapshot
+    Type: AWS::RDS::DBCluster
+    Properties:
+      BackupRetentionPeriod: !Ref DBBackupRetentionPeriod
+      DatabaseName: !If [ HasDBSnapshotIdentifier, !Ref "AWS::NoValue", !Ref DBName ]
+      DBClusterIdentifier: !Join [ "-", [ !Ref "Vpc", "rdscluster", "cluster" ] ]
+      DBClusterParameterGroupName: !Ref DBClusterParameterGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      DeletionProtection: !Ref DeletionProtection
+      Engine: !Ref Engine
+      EngineMode: provisioned
+      EngineVersion: !FindInMap [ EngineMap, !Ref Engine, EngineVersion ]
+      KmsKeyId: !If [ NewKMSKey, !Ref Key, !FindInMap [ "KMSKeyValues", !Ref "KMSKey", "KeyArn" ] ]
+      MasterUsername: !If [ HasDBSnapshotIdentifier, !Ref "AWS::NoValue", !Ref DBMasterUsername ]
+      MasterUserPassword: !If [ HasDBSnapshotIdentifier, !Ref "AWS::NoValue", !Ref DBMasterUserPassword ]
+      Port: !FindInMap [ EngineMap, !Ref Engine, Port ]
+      PreferredBackupWindow: !Ref PreferredBackupWindow
+      PreferredMaintenanceWindow: !Ref PreferredMaintenanceWindow
+      SnapshotIdentifier: !If [ HasDBSnapshotIdentifier, !Ref DBSnapshotIdentifier, !Ref "AWS::NoValue" ]
+      StorageEncrypted: true
+      VpcSecurityGroupIds:
+      - !Ref ClusterSecurityGroup
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "rdscluster", "cluster" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "Vpc"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  DBInstanceA:
+    Type: "AWS::RDS::DBInstance"
+    Properties:
+      AllowMajorVersionUpgrade: false
+      AutoMinorVersionUpgrade: true
+      CopyTagsToSnapshot: true
+      DBClusterIdentifier: !Ref DBCluster
+      DBInstanceClass: !Ref DBInstanceClass
+      DBInstanceIdentifier: !Join [ "-", [ !Ref "Vpc", "rdscluster", "dbinstance", "a" ] ]
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      Engine: !Ref Engine
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "rdscluster", "dbinstance", "a" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "Vpc"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+        -
+          Key: AZ
+          Value: !Join [ "", [ !Ref "AWS::Region", "a" ] ]
+
+  DBInstanceB:
+    Condition: HasReplicaDB
+    Type: "AWS::RDS::DBInstance"
+    Properties:
+      AllowMajorVersionUpgrade: false
+      AutoMinorVersionUpgrade: true
+      CopyTagsToSnapshot: true
+      DBClusterIdentifier: !Ref DBCluster
+      DBInstanceClass: !Ref DBInstanceClass
+      DBInstanceIdentifier: !Join [ "-", [ !Ref "Vpc", "rdscluster", "dbinstance", "b" ] ]
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      Engine: !Ref Engine
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "rdscluster", "dbinstance", "b" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "Vpc"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+        -
+          Key: AZ
+          Value: !Join [ "", [ !Ref "AWS::Region", "b" ] ]
+
+Outputs:
+
+  RDSClusterName:
+    Description: "RDS Cluster Name"
+    Value: !Ref DBCluster
+    Export:
+      Name: !Join [ "", [ !Ref "Vpc", "-rdscluster-name" ] ]
+      
+  RDSDNSName:
+    Description: "Connection endpoint for the RDS cluster"
+    Value: !GetAtt "DBCluster.Endpoint.Address"
+    Export:
+      Name: !Join [ "", [ !Ref "Vpc", "-rds-dns-name" ] ]
+
+  RDSReadDNSName:
+    Condition: HasReplicaDB
+    Description: "Read replica endpoint for the RDS cluster"
+    Value: !GetAtt "DBCluster.ReadEndpoint.Address"
+    Export:
+      Name: !Join [ "", [ !Ref "Vpc", "-rds-read-dns-name" ] ]
+
+  RDSDBName:
+    Description: "DB Name the RDS cluster"
+    Value: !Ref "DBName"
+    Export:
+      Name: !Join [ "", [ !Ref "Vpc", "-rds-dbname" ] ]
+
+  RDSDBMasterUsername:
+    Description: "DB Master Username for the RDS cluster"
+    Value: !Ref "DBMasterUsername"
+    Export:
+      Name: !Join [ "", [ !Ref "Vpc", "-rds-dbmaster-username" ] ]
+
+  RDSDBMasterUserPassword:
+    Description: "DB Master User Password for the RDS cluster"
+    Value: !Ref "DBMasterUserPassword"
+    Export:
+      Name: !Join [ "", [ !Ref "Vpc", "-rds-dbmaster-userpassword" ] ]
+
+  RDSClusterSG:
+    Description: "RDS Cluster EC2 security group"
+    Value: !Ref ClusterSecurityGroup
+    Export:
+      Name: !Join [ "", [ !Ref "Vpc", "-rdscluster-sg" ] ]
+

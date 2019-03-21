@@ -1,0 +1,417 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "AWS CFN Stack Wordpress on AutoScaling EC2 and Include ELB" 
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: "Autoscaling WordPress server running on EC2"
+      Parameters:
+      - Vpc
+      - KeyName
+      - InstanceType
+      - MinSize
+      - MaxSize
+      - DesiredCapacity
+      - DBEndpoint
+      - DBName
+      - DBUser
+      - DBPassword
+
+Parameters:
+
+  Vpc:
+    Description: "VPC Name"
+    Type: "String"
+    Default: "dev"
+    AllowedValues: [ "dev", "test", "production" ]
+  KeyName:
+    Description: "Name of an existing EC2 KeyPair to enable SSH access to the instance"
+    Type: "AWS::EC2::KeyPair::KeyName"
+    Default: "dev"
+  InstanceType:
+    Description: "WebServer EC2 instance type"
+    Type: String
+    Default: "t2.micro"
+    AllowedValues: [ "t2.micro", "t2.small", "t2.medium" ]
+    ConstraintDescription: "Enter valid EC2 instance type"
+  MinSize:
+    Type: String
+    Description: "Minimum number of EC2 application servers"
+    Default: "1"
+    AllowedValues: [ "1", "2" ]
+  MaxSize:
+    Type: String
+    Description: "Maximum number of EC2 application servers"
+    Default: "2"
+    AllowedValues: [ "1", "2", "3", "4" ]
+  DesiredCapacity:
+    Type: String
+    Description: "Nominal Size of of EC2 application servers"
+    Default: "1"
+    AllowedValues: [ "1", "2" ]
+  DBEndpoint:
+    Type: String
+    Description: "WordPress RDS Cluster Endpoint"
+    Default: "dev-rdscluster-cluster.cluster-cfe8uyn3ecs3.ap-southeast-2.rds.amazonaws.com"
+  DBName:
+    Default: "Wordpressdb"
+    Description: "WordPress database name"
+    Type: String
+    MinLength: "1"
+    MaxLength: "64"
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: "Must begin with a letter and contain only alphanumeric characters"
+  DBUser:
+    Default: "master"
+    Description: "WordPress database admin account username"
+    Type: String
+    MinLength: "1"
+    MaxLength: "16"
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: "Must begin with a letter and contain only alphanumeric characters"
+  DBPassword:
+    Default: "MyPassword2019"
+    Description: "The WordPress database admin account password"
+    Type: String
+    MinLength: "8"
+    MaxLength: "32"
+    AllowedPattern: "[a-zA-Z0-9]*"
+    ConstraintDescription: "Must contain only alphanumeric characters"
+
+Mappings:
+
+  RegionMap:
+    ap-southeast-2:
+      "AMALINUX" : "ami-55d4e436" # AMALINUX SEP 2016
+
+  # Enter your ACM Certificate ARN value as https://spachesip-lab.mydomain.com.au
+  ssl:
+    dev:
+      arn: "arn:aws:acm:ap-southeast-2:913045264868:certificate/ce901f2e-47eb-4626-a99f-c8902fb28739"
+
+  TagValues:
+    Details:
+      Company: "acmecorp"   # Enter fixed value for company name
+      Department: "devops"  # Enter fixed value Deparment name
+      Product: "ec2"    # Exter fixed value as required
+      Application: "wordpress"    # Enter fixed value as required
+      CostCenter: "99999"  # This is a Sample, can be any value defined from accounts team or their ERP software
+
+Resources:
+
+  Role: 
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Join [ "-", [ !Ref "Vpc", "wordpress", "role" ] ]
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+
+  InstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      InstanceProfileName: !Join [ "-", [ !Ref "Vpc", "wordpress", "profile" ] ]
+      Path: "/"
+      Roles:
+        - !Ref "Role"
+
+  LoadBalancer:
+    Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
+    Properties:
+      Name: !Join [ "-", [ !Ref "Vpc", "wordpress", "lb" ] ]   
+      LoadBalancerAttributes:
+        -
+          Key: "idle_timeout.timeout_seconds"
+          Value: '60'
+        -
+          Key: "deletion_protection.enabled"
+          Value: "false"
+        -
+          Key: "access_logs.s3.enabled"
+          Value: "false"
+        - 
+          Key: "routing.http2.enabled"
+          Value: "true"
+      Scheme: "internet-facing"
+      SecurityGroups:
+        -
+          Fn::ImportValue:
+            !Sub "${Vpc}-load-balancer-sg-id"
+      Subnets:
+        -
+          Fn::ImportValue:
+            !Sub "${Vpc}-public-subnet-1-id"
+        -
+          Fn::ImportValue:
+            !Sub "${Vpc}-public-subnet-2-id"
+      Type: "application"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "wordpress", "lb" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "Vpc"
+
+  HttpListener:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      DefaultActions:
+        -
+          Type: "forward"
+          TargetGroupArn: !Ref "TargetGroup"
+      LoadBalancerArn: !Ref "LoadBalancer"
+      Port: 80
+      Protocol: "HTTP"
+
+  HttpsListener:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      Certificates:
+        - CertificateArn: !FindInMap [ "ssl", !Ref "Vpc", "arn" ]
+      DefaultActions:
+        -
+          Type: "forward"
+          TargetGroupArn: !Ref "TargetGroup"
+      LoadBalancerArn: !Ref "LoadBalancer"
+      Port: 443
+      Protocol: "HTTPS"
+
+  TargetGroup:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      Name: !Join [ "-", [ !Ref "Vpc", "wordpress", "tg" ] ]      
+      Protocol: "HTTP"
+      Port: 80
+      TargetType: "instance"
+      HealthCheckPath: "/status.html"
+      HealthCheckProtocol: "HTTP"
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 5
+      HealthCheckTimeoutSeconds: 10
+      HealthCheckIntervalSeconds: 30
+      Matcher:
+        HttpCode: "200"
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${Vpc}-vpc-id"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "wordpress", "tg" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "Vpc"
+
+  LaunchConfiguration:
+    Type: "AWS::AutoScaling::LaunchConfiguration"
+    Properties:
+      LaunchConfigurationName: !Join [ "-", [ !Ref "Vpc", "wordpress", "lc" ] ]
+      ImageId: !FindInMap [ RegionMap, !Ref "AWS::Region", "AMALINUX" ]
+      InstanceType: !Ref "InstanceType"
+      KeyName: !Ref "KeyName"
+      SecurityGroups:
+        -
+          Fn::ImportValue:
+            !Sub "${Vpc}-wordpress-instance-sg-id"
+        -
+          Fn::ImportValue:
+            !Sub "${Vpc}-internet-access-sg-id"
+      UserData:
+        "Fn::Base64":
+          !Sub |
+            #!/bin/bash
+            yum update -y aws-cfn-bootstrap # good practice - always do this.
+            /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource LaunchConfiguration --configsets Wordpress --region ${AWS::Region}
+            yum -y update
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource AutoScalingGroup --region ${AWS::Region}
+    CreationPolicy:
+      ResourceSignal:
+        Count: !Ref "DesiredCapacity"
+        Timeout: "PT15M"
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          Wordpress:
+            - "configure_cfn"
+            - "install_wordpress"
+            - "configure_wordpress"
+        configure_cfn:
+          files:
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+                verbose=true
+                interval=5
+              mode: "000400"
+              owner: root
+              group: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.LaunchConfiguration.Metadata.AWS::CloudFormation::Init
+                action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource LaunchConfiguration --configsets wordpress_install --region ${AWS::Region}
+              mode: "000400"
+              owner: root
+              group: root
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: "true"
+                ensureRunning: "true"
+                files:
+                  - "/etc/cfn/cfn-hup.conf"
+                  - "/etc/cfn/hooks.d/cfn-auto-reloader.conf"
+        install_wordpress:
+          packages:
+            yum:
+              httpd: []
+              php: []
+              php-mysql: []
+              mysql: []
+              mysql-libs: []
+              mysql-devel: []
+          sources:
+            /var/www/html: http://wordpress.org/latest.tar.gz
+          services:
+            sysvinit:
+              httpd:
+                enabled: "true"
+                ensureRunning: "true"
+          files:
+            /tmp/configure-db:
+              content: !Sub |
+                #!/bin/bash
+                mv /etc/httpd/conf.d/welcome.conf /etc/httpd/conf.d/welcome.conf.bak
+                cp /var/www/html/wordpress/wp-config-sample.php /var/www/html/wordpress/wp-config.php
+                sed -i 's/database_name_here/${DBName}/g' /var/www/html/wordpress/wp-config.php
+                sed -i 's/username_here/${DBUser}/g' /var/www/html/wordpress/wp-config.php
+                sed -i 's/password_here/${DBPassword}/g' /var/www/html/wordpress/wp-config.php
+                sed -i 's/localhost/${DBEndpoint}/g' /var/www/html/wordpress/wp-config.php
+              mode: "000500"
+              owner: root
+              group: root
+            /tmp/custom404:
+              content: !Sub |
+                #!/bin/bash
+                sed -i 's/#ErrorDocument 404/ErrorDocument 404/' /etc/httpd/conf/httpd.conf
+                sed -i 's/ErrorDocument 404 "/#ErrorDocument 404 "/' /etc/httpd/conf/httpd.conf
+                sed -i 's/missing.html/404.html/' /etc/httpd/conf/httpd.conf
+                service httpd restart
+              mode: "000500"
+              owner: root
+              group: root
+            /var/www/html/status.html:
+              content: !Sub |
+                <!DOCTYPE html>
+                <html>
+                  <body>
+                    <p>OK</p>
+                  </body>
+                </html>
+              mode: "000555"
+              owner: root
+              group: root
+            /var/www/html/index.html:
+              content: !Sub |
+                <!DOCTYPE html>
+                <html>
+                  <body>
+                    <h1>Index Page
+                    <p>This is the index page</p>
+                  </body>
+                </html>
+              mode: "000555"
+              owner: root
+              group: root
+            /var/www/html/404.html:
+              content: !Sub |
+                <!DOCTYPE html>
+                <html>
+                  <body>
+                    <p>This is a custom 404 page</p>
+                  </body>
+                </html>
+              mode: "000555"
+              owner: root
+              group: root
+        configure_wordpress:
+          commands:
+            01_configure_wordpress:
+              command: "/tmp/configure-db"
+              cmd: "/tmp"
+            02_configure_custom404:
+              command: "/tmp/custom404"
+              cwd: "/tmp"
+  
+  AutoScalingGroup:
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    Properties:
+      AutoScalingGroupName: !Join [ "-", [ !Ref "Vpc", "wordpress", "asg" ] ]
+      Cooldown: "300"
+      DesiredCapacity: !Ref "DesiredCapacity"
+      HealthCheckGracePeriod: "300"
+      HealthCheckType: "ELB"
+      LaunchConfigurationName: !Ref "LaunchConfiguration"
+      TargetGroupARNs:
+        - !Ref "TargetGroup"
+      MaxSize: !Ref "MaxSize"
+      MinSize: !Ref "MinSize"
+      VPCZoneIdentifier:
+        -
+          Fn::ImportValue:
+            !Sub "${Vpc}-application-subnet-1-id"
+        -
+          Fn::ImportValue:
+            !Sub "${Vpc}-application-subnet-2-id"
+
+Outputs:
+
+  WebsiteURL:
+    Description: "Sample Website"
+    Value: !Join [ "", [ "http://", !GetAtt [ "LoadBalancer", "DNSName" ], "" ] ]
+    Export:
+      Name: !Join [ "", [ !Ref "Vpc", "-", !FindInMap [ "TagValues", "Details", "Application" ], "-url" ] ]
+

@@ -1,0 +1,785 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "AWS CFN Stack to create a Custom VPC with 3 tier (Public - Application - Database) each tier in located in 2 AZ" 
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: "VPC Configuration"
+      Parameters:
+      - VpcName
+      - VpcCidrPrefix
+
+Parameters:
+
+  VpcName:
+    Description: "Enter VPC Name"
+    Default: "dev"
+    AllowedValues: [ "dev", "test", "production" ]
+    Type: "String"
+
+  VpcCidrPrefix:
+    Description: "VPC CIDR Prefix"  
+    Default: "10.210"    # First 2 set values, as it will configured as X.X.0.0/16 CIDR must be a private IP address range
+    Type: "String"
+    ConstraintDescription: "Enter a valid CIDR Format for the first 2 set"
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})"
+    MinLength: 3
+    MaxLength: 6
+
+Mappings:
+
+  TagValues:
+    Details:
+      Company: "acmecorp"   # Enter fixed value for company name
+      Department: "devops"  # Enter fixed value Deparment name
+      Product: "network"    # Exter fixed value as required
+      Application: "vpc"    # Enter fixed value as required
+      CostCenter: "99999"  # This is a Sample, can be any value defined from accounts team or their ERP software
+
+Resources:
+
+  Vpc:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: !Join [ ".", [ !Ref "VpcCidrPrefix", "0.0/16" ] ]
+      EnableDnsSupport: "true"
+      EnableDnsHostnames: "true"
+      InstanceTenancy: "default"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "VpcName", "vpc" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "VpcName"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  InternetGateway:
+    Type: "AWS::EC2::InternetGateway"
+    Properties:
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "VpcName", "vpc", "igw" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "VpcName"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  AttachGateway:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      VpcId: !Ref "Vpc"
+      InternetGatewayId: !Ref "InternetGateway"
+
+  PublicSubnet1:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      VpcId: !Ref "Vpc"
+      AvailabilityZone: !Join [ "", [ !Ref "AWS::Region", "a" ] ]
+      CidrBlock: !Join [ ".", [ !Ref "VpcCidrPrefix", "1.0/24" ] ]
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "VpcName", "public", "zone", "1", "subnet" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "VpcName"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  PublicSubnet2:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      VpcId: !Ref "Vpc"
+      AvailabilityZone: !Join [ "", [ !Ref "AWS::Region", "b" ] ]
+      CidrBlock: !Join [ ".", [ !Ref "VpcCidrPrefix", "2.0/24" ] ]
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "VpcName", "public", "zone", "2", "subnet" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "VpcName"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  ApplicationSubnet1:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      VpcId: !Ref "Vpc"
+      AvailabilityZone: !Join [ "", [ !Ref "AWS::Region", "a" ] ]
+      CidrBlock: !Join [ ".", [ !Ref "VpcCidrPrefix", "4.0/24" ] ]
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "VpcName", "application", "zone", "1", "subnet" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "VpcName"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  ApplicationSubnet2:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      VpcId: !Ref "Vpc"
+      AvailabilityZone: !Join [ "", [ !Ref "AWS::Region", "b" ] ]
+      CidrBlock: !Join [ ".", [ !Ref "VpcCidrPrefix", "5.0/24" ] ]
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "VpcName", "application", "zone", "2", "subnet" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "VpcName"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  DataStoreSubnet1:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      VpcId: !Ref "Vpc"
+      AvailabilityZone: !Join [ "", [ !Ref "AWS::Region", "a" ] ]
+      CidrBlock: !Join [ ".", [ !Ref "VpcCidrPrefix", "8.0/24" ] ]
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "VpcName", "datastore", "zone", "1", "subnet" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "VpcName"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  DataStoreSubnet2:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      VpcId: !Ref "Vpc"
+      AvailabilityZone: !Join [ "", [ !Ref "AWS::Region", "b" ] ]
+      CidrBlock: !Join [ ".", [ !Ref "VpcCidrPrefix", "9.0/24" ] ]
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "VpcName", "datastore", "zone", "2", "subnet" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "VpcName"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  EipNatGateway01:
+    Type: "AWS::EC2::EIP"
+    Properties:
+      Domain: "vpc"
+
+  EipNatGateway02:
+    Type: "AWS::EC2::EIP"
+    Properties:
+      Domain: "vpc"
+
+  NatGateway01:
+    Type: "AWS::EC2::NatGateway"
+    Properties:
+      AllocationId: !GetAtt [ "EipNatGateway01", "AllocationId" ]
+      SubnetId: !Ref "PublicSubnet1"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "VpcName", "natgw","1" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "VpcName"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  NatGateway02:
+    Type: "AWS::EC2::NatGateway"
+    Properties:
+      AllocationId: !GetAtt [ "EipNatGateway02", "AllocationId" ]
+      SubnetId: !Ref "PublicSubnet2"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "VpcName", "natgw","2" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "VpcName"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  InternetGatewayRouteTable:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref "Vpc"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "VpcName", "igw","rtb" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "VpcName"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  InternetGatewayDefaultRoute:
+    Type: "AWS::EC2::Route"
+    Properties:
+      RouteTableId: !Ref "InternetGatewayRouteTable"
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref "InternetGateway"
+
+  PublicSubnet1RouteTableAssociation:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref "PublicSubnet1"
+      RouteTableId: !Ref "InternetGatewayRouteTable"
+
+  PublicSubnet2RouteTableAssociation:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref "PublicSubnet2"
+      RouteTableId: !Ref "InternetGatewayRouteTable"
+
+  ApplicationRouteTableZone1:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref "Vpc"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "VpcName", "application", "zone", "1","rtb" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "VpcName"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  ApplicationRouteTableZone1DefaultRoute:
+    Type: "AWS::EC2::Route"
+    Properties:
+      RouteTableId: !Ref "ApplicationRouteTableZone1"
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref "NatGateway01"
+
+  ApplicationRouteTableZone2:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref "Vpc"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "VpcName", "application", "zone", "2","rtb" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "VpcName"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  ApplicationRouteTableZone2DefaultRoute:
+    Type: "AWS::EC2::Route"
+    Properties:
+      RouteTableId: !Ref "ApplicationRouteTableZone2"
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref "NatGateway02"
+
+  DataStoreRouteTableZone1:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref "Vpc"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "VpcName", "datastore", "zone", "1","rtb" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "VpcName"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  DataStoreRouteTableZone1DefaultRoute:
+    Type: "AWS::EC2::Route"
+    Properties:
+      RouteTableId: !Ref "DataStoreRouteTableZone1"
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref "NatGateway01"
+
+  DataStoreRouteTableZone2:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref "Vpc"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "VpcName", "datastore", "zone", "2","rtb" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "VpcName"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  DataStoreRouteTableZone2DefaultRoute:
+    Type: "AWS::EC2::Route"
+    Properties:
+      RouteTableId: !Ref "DataStoreRouteTableZone2"
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref "NatGateway02"
+
+  ApplicationSubnet1RouteTableAssociation:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref "ApplicationSubnet1"
+      RouteTableId: !Ref "ApplicationRouteTableZone1"
+
+  ApplicationSubnet2RouteTableAssociation:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref "ApplicationSubnet2"
+      RouteTableId: !Ref "ApplicationRouteTableZone2"
+
+  DataStoreSubnet1RouteTableAssociation:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref "DataStoreSubnet1"
+      RouteTableId: !Ref "DataStoreRouteTableZone1"
+
+  DataStoreSubnet2RouteTableAssociation:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref "DataStoreSubnet2"
+      RouteTableId: !Ref "DataStoreRouteTableZone2"
+
+  DataStoreRdsSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties:
+      DBSubnetGroupDescription: !Join [ " ", [ !Ref "VpcName", "datastore", "rds", "subnet","group" ] ]
+      SubnetIds:
+        - !Ref "DataStoreSubnet1"
+        - !Ref "DataStoreSubnet2"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "VpcName", "datastore", "rds", "subnet","group" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "VpcName"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  CacheClusterSubnetGroup:
+    Type: "AWS::ElastiCache::SubnetGroup"
+    Properties:
+      Description: "ElastiCache Subnet Group"
+      SubnetIds:
+        - !Ref "DataStoreSubnet1"
+        - !Ref "DataStoreSubnet2"
+
+  EipJumpboxServer:
+    Type: "AWS::EC2::EIP"
+    Properties:
+      Domain: "vpc"
+
+Outputs:
+
+  VpcId:
+    Description: "VPC ID"
+    Value: !Ref "Vpc"
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-vpc-id" ] ]
+
+  InternetGateway:
+    Description: "Internet Gateway ID"
+    Value: !Ref "InternetGateway"
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-internet-gateway-id" ] ]
+
+  VpcCidr:
+    Description: "VPC CIDR"
+    Value: !Join [ ".", [ !Ref "VpcCidrPrefix", "0.0/16" ] ]
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-vpc-cidr" ] ]
+
+  PublicSubnet1:
+    Description: "Public Subnet 1 ID"
+    Value: !Ref "PublicSubnet1"
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-public-subnet-1-id" ] ]
+
+  PublicSubnetCIDR1:
+    Description: "Public Subnet 1 CIDR ID"
+    Value: !Join [ ".", [ !Ref "VpcCidrPrefix", "1.0/24" ] ]
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-public-subnet-cidr-1-id" ] ]
+
+  PublicSubnet2:
+    Description: "Public Subnet 2 ID"
+    Value: !Ref "PublicSubnet2"
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-public-subnet-2-id" ] ]
+
+  PublicSubnetCIDR2:
+    Description: "Public Subnet 2 CIDR ID"
+    Value: !Join [ ".", [ !Ref "VpcCidrPrefix", "2.0/24" ] ]
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-public-subnet-cidr-2-id" ] ]
+
+  ApplicationSubnet1:
+    Description: "Application Subnet 1 ID"
+    Value: !Ref "ApplicationSubnet1"
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-application-subnet-1-id" ] ]
+
+  ApplicationSubnetCIDR1:
+    Description: "Application Subnet 1 CIDR ID"
+    Value: !Join [ ".", [ !Ref "VpcCidrPrefix", "4.0/24" ] ]
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-application-subnet-cidr-1-id" ] ]
+
+  ApplicationSubnet2:
+    Description: "Application Subnet 2 ID"
+    Value: !Ref "ApplicationSubnet2"
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-application-subnet-2-id" ] ]
+
+  ApplicationSubnetCIDR2:
+    Description: "Application Subnet 2 CIDR ID"
+    Value: !Join [ ".", [ !Ref "VpcCidrPrefix", "5.0/24" ] ]
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-application-subnet-cidr-2-id" ] ]
+
+  DataStoreSubnet1:
+    Description: "DataStore Subnet 1 ID"
+    Value: !Ref "DataStoreSubnet1"
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-datastore-subnet-1-id" ] ]
+
+  DataStoreSubnetCIDR1:
+    Description: "Datastore Subnet 1 CIDR ID"
+    Value: !Join [ ".", [ !Ref "VpcCidrPrefix", "8.0/24" ] ]
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-datastore-subnet-cidr-1-id" ] ]
+
+  DataStoreSubnet2:
+    Description: "DataStore Subnet 2 ID"
+    Value: !Ref "DataStoreSubnet2"
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-datastore-subnet-2-id" ] ]
+
+  DataStoreSubnetCIDR2:
+    Description: "Datastore Subnet 2 CIDR ID"
+    Value: !Join [ ".", [ !Ref "VpcCidrPrefix", "9.0/24" ] ]
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-datastore-subnet-cidr-2-id" ] ]
+
+  EipNatGateway01:
+    Description: "EIP NAT Gateway 1 IP"
+    Value: !Ref "EipNatGateway01"
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-eip-1-ip" ] ]
+
+  EipNatGateway02:
+    Description: "EIP NAT Gateway 2 IP"
+    Value: !Ref "EipNatGateway02"
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-eip-2-ip" ] ]
+
+  InternetGatewayRouteTable:
+    Description: "Internet Gateway Route Table"
+    Value: !Ref "InternetGatewayRouteTable"
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-internet-gateway-route-table" ] ]
+
+  ApplicationRouteTableZone1:
+    Description: "Application Route Table Zone 1"
+    Value: !Ref "ApplicationRouteTableZone1"
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-application-route-table-zone-1" ] ]
+
+  ApplicationRouteTableZone2:
+    Description: "Application Route Table Zone 2"
+    Value: !Ref "ApplicationRouteTableZone2"
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-application-route-table-zone-2" ] ]
+
+  DataStoreRouteTableZone1:
+    Description: "DataStore Route Table Zone 1"
+    Value: !Ref "DataStoreRouteTableZone1"
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-datastore-route-table-zone-1" ] ]
+
+  DataStoreRouteTableZone2:
+    Description: "DataStore Route Table Zone 2"
+    Value: !Ref "DataStoreRouteTableZone2"
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-datastore-route-table-zone-2" ] ]
+
+  EipJumpboxServer:
+    Description: "EIP Jumpbox Server"
+    Value: !GetAtt "EipJumpboxServer.AllocationId"
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-eip-jumpbox-server-allocation" ] ]
+
+  CacheClusterSubnetGroup:
+    Description: "ElastiCache Cluster SubnetGroup"
+    Value: !Ref "CacheClusterSubnetGroup"
+    Export:
+      Name: !Join [ "", [ !Ref "VpcName", "-cache-cluster-subnet-group" ] ]

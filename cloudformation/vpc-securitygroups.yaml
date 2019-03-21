@@ -1,0 +1,613 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "VPC Security Groups configuration"
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: "VPC Security Groups configuration details"
+      Parameters:
+      - Vpc
+      - OfficeWAN
+
+Parameters:
+
+  Vpc:
+    Type: "String"
+    Description: "VPC to be used as the source"
+    Default: "dev"
+    AllowedValues: [ "dev", "test", "production" ]
+  OfficeWAN:
+    Type: "String"
+    Description: "Enter your office WAN IP Address"
+    Default: "202.159.160.20/32"
+    MinLength: "9"
+    MaxLength: "18"
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: "Enter a valid IP CIDR range as X.X.X.X/X."
+
+Mappings:
+
+  LoadBalancerSG:
+    dev:
+      Cidr: "0.0.0.0/0"  # Public Internet or set WAN IP Address where you are located
+    production:
+      Cidr: "0.0.0.0/0"  # Public Internet or set WAN IP Address where you are located
+    test:
+      Cidr: "0.0.0.0/0"  # Public Internet or set WAN IP Address where you are located
+
+  TagValues:
+    Details:
+      Company: "acmecorp"   # Enter fixed value for company name
+      Department: "devops"  # Enter fixed value Deparment name
+      Product: "network"    # Exter fixed value as required
+      Application: "sg"    # Enter fixed value as required
+      CostCenter: "99999"  # This is a Sample, can be any value defined from accounts team or their ERP software
+
+Resources:
+
+  JumpHostAccess:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${Vpc}-vpc-id"
+      GroupName: !Join [ "-", [ !Ref "Vpc", "jumphost", "access", "sg" ] ]
+      GroupDescription: !Join [ " ", [ !Ref "Vpc", "jumphpst access security group rules" ] ]
+      SecurityGroupIngress:
+        -
+          Description: "SSH Access from Public Internet"
+          IpProtocol: "tcp"
+          FromPort: "22"
+          ToPort: "22"
+          CidrIp: "0.0.0.0/0"
+        -
+          Description: "SSH Access from Office WAN"
+          IpProtocol: "tcp"
+          FromPort: "22"
+          ToPort: "22"
+          CidrIp: !Ref "OfficeWAN"
+        -
+          Description: !Join [ "", [ "ICMP Ping from ", !Ref "Vpc", "-vpc network" ] ]
+          IpProtocol: "icmp"
+          FromPort: "-1"
+          ToPort: "-1"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-vpc-cidr"
+      SecurityGroupEgress:
+        -
+          Description: !Join [ "", [ "ICMP Ping to ", !Ref "Vpc", "-vpc network" ] ]
+          IpProtocol: "icmp"
+          FromPort: "-1"
+          ToPort: "-1"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-vpc-cidr"
+        -
+          Description: !Join [ "", [ "SSH Access to ", !Ref "Vpc", "-vpc network" ] ]
+          IpProtocol: "tcp"
+          FromPort: "22"
+          ToPort: "22"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-vpc-cidr"
+        -
+          Description: !Join [ "", [ "HTTP Access to ", !Ref "Vpc", "-vpc network" ] ]
+          IpProtocol: "tcp"
+          FromPort: "80"
+          ToPort: "80"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-vpc-cidr"
+        -
+          Description: !Join [ "", [ "MYSQL Access to ", !Ref "Vpc", "-vpc network" ] ]
+          IpProtocol: "tcp"
+          FromPort: "3306"
+          ToPort: "3306"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-vpc-cidr"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "jumphost", "access", "sg" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "Vpc"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  InternetAccess:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${Vpc}-vpc-id"
+      GroupName: !Join [ "-", [ !Ref "Vpc", "internet", "access", "sg" ] ]
+      GroupDescription: !Join [ " ", [ !Ref "Vpc", "internet access security group rules" ] ]
+      SecurityGroupIngress:
+        -
+          Description: "ICMP Ping from VPC network"
+          IpProtocol: "58"
+          FromPort: "-1"
+          ToPort: "-1"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-vpc-cidr"
+        -
+          Description: "ICMP Ping from VPC network"
+          IpProtocol: "icmp"
+          FromPort: "-1"
+          ToPort: "-1"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-vpc-cidr"
+      SecurityGroupEgress:
+        -
+          Description: "DHCP UDP access Ipv4"
+          IpProtocol: "udp"
+          FromPort: "68"
+          ToPort: "68"
+          CidrIp: "0.0.0.0/0"
+        -
+          Description: "NTP TCP access"
+          IpProtocol: "tcp"
+          FromPort: "123"
+          ToPort: "123"
+          CidrIp: "0.0.0.0/0"
+        -
+          Description: "NTP UDP access"
+          IpProtocol: "udp"
+          FromPort: "123"
+          ToPort: "123"
+          CidrIp: "0.0.0.0/0"
+        -
+          Description: "DNS UDP access"
+          IpProtocol: "udp"
+          FromPort: "53"
+          ToPort: "53"
+          CidrIp: "0.0.0.0/0"
+        -
+          Description: "DNS TCP access"
+          IpProtocol: "tcp"
+          FromPort: "53"
+          ToPort: "53"
+          CidrIp: "0.0.0.0/0"
+        -
+          Description: "HTTP access"
+          IpProtocol: "tcp"
+          FromPort: "80"
+          ToPort: "80"
+          CidrIp: "0.0.0.0/0"
+        -
+          Description: "HTTPS access"
+          IpProtocol: "tcp"
+          FromPort: "443"
+          ToPort: "443"
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "internet", "access", "sg" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "Vpc"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  GenericLoadBalancer:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${Vpc}-vpc-id"
+      GroupName: !Join [ "-", [ !Ref "Vpc", "generic", "loadbalancer", "sg" ] ]
+      GroupDescription: !Join [ " ", [ !Ref "Vpc", "generic load balancer security group rules" ] ]
+      SecurityGroupIngress:
+        -
+          Description: "HTTP Access from Office WAN or Public Internet"
+          IpProtocol: "tcp"
+          FromPort: "80"
+          ToPort: "80"
+          CidrIp: !FindInMap [ "LoadBalancerSG", !Ref "Vpc", "Cidr" ]
+        -
+          Description: "HTTPS Access from Office WAN or Public Internet"
+          IpProtocol: "tcp"
+          FromPort: "443"
+          ToPort: "443"
+          CidrIp: !FindInMap [ "LoadBalancerSG", !Ref "Vpc", "Cidr" ]
+      SecurityGroupEgress:
+        -
+          Description: !Join [ "", [ "HTTP Traffic to ", !Ref "Vpc", " Application Subnet 1" ] ]
+          IpProtocol: "tcp"
+          FromPort: "80"
+          ToPort: "80"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-application-subnet-cidr-1-id"
+        -
+          Description: !Join [ "", [ "HTTP Traffic to ", !Ref "Vpc", " Application Subnet 2" ] ]
+          IpProtocol: "tcp"
+          FromPort: "80"
+          ToPort: "80"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-application-subnet-cidr-2-id"
+        -
+          Description: !Join [ "", [ "ECS Dynamic Port access to ", !Ref "Vpc", " Application Subnet 1" ] ]
+          IpProtocol: "tcp"
+          FromPort: "31000"
+          ToPort: "61000"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-application-subnet-cidr-1-id"
+        -
+          Description: !Join [ "", [ "ECS Dynamic Port access to ", !Ref "Vpc", " Application Subnet 2" ] ]
+          IpProtocol: "tcp"
+          FromPort: "31000"
+          ToPort: "61000"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-application-subnet-cidr-2-id"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "generic", "loadbalancer", "sg" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "Vpc"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  ECSInstances:
+    Type: "AWS::EC2::SecurityGroup"
+    DependsOn: GenericLoadBalancer
+    Properties:
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${Vpc}-vpc-id"
+      GroupName: !Join [ "-", [ !Ref "Vpc", "ecs", "instance", "sg" ] ]
+      GroupDescription: !Join [ " ", [ !Ref "Vpc", "ECS hosts and the tasks/containers security group rules" ] ]
+      SecurityGroupIngress:
+        # Only allow inbound access to ECS from the ALB
+        -
+          Description: "HTTP Access from Generic ALB"
+          IpProtocol: "tcp"
+          FromPort: "80"
+          ToPort: "80"
+          SourceSecurityGroupId: !Ref "GenericLoadBalancer"
+        -
+          Description: "HTTPS Access fron Generic ALB"
+          IpProtocol: "tcp"
+          FromPort: "443"
+          ToPort: "443"
+          SourceSecurityGroupId: !Ref "GenericLoadBalancer"
+        -
+          #https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/quickref-ecs.html
+          Description: "ECS Dynamic Ports Access from Generic ALB"
+          IpProtocol: "tcp"
+          FromPort: "31000"
+          ToPort: "61000"
+          SourceSecurityGroupId: !Ref "GenericLoadBalancer"
+      SecurityGroupEgress:
+        -
+          Description: "Amazon ECS agent ports"
+          IpProtocol: "tcp"
+          FromPort: "51678"
+          ToPort: "51679"
+          CidrIp: "0.0.0.0/0"
+        -
+          Description: "Amazon ECS SSH port to vpc application subnet 1" 
+          IpProtocol: "tcp"
+          FromPort: "22"
+          ToPort: "22"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-application-subnet-cidr-1-id"
+        -
+          Description: "Amazon ECS SSH port to vpc application subnet 2"
+          IpProtocol: "tcp"
+          FromPort: "22"
+          ToPort: "22"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-application-subnet-cidr-2-id"
+        -
+          Description: "SMTP used by sendmail" 
+          IpProtocol: "tcp"
+          FromPort: "25"
+          ToPort: "25"
+          CidrIp: "0.0.0.0/0"
+        -
+          Description: "ECS Dynamic Ports Access to Generic ALB"
+          IpProtocol: "tcp"
+          FromPort: "31000"
+          ToPort: "61000"
+          DestinationSecurityGroupId: !Ref "GenericLoadBalancer"
+
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "ecs", "instance", "sg" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "Vpc"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  WordpressInstance:
+    Type: "AWS::EC2::SecurityGroup"
+    DependsOn: GenericLoadBalancer
+    Properties:
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${Vpc}-vpc-id"
+      GroupName: !Join [ "-", [ !Ref "Vpc", "wordpress", "instance", "sg" ] ]
+      GroupDescription: !Join [ " ", [ !Ref "Vpc", "wordpress instance security group rules" ] ]
+      SecurityGroupIngress:
+        -
+          Description: "HTTP Access from Generic ALB"
+          IpProtocol: "tcp"
+          FromPort: "80"
+          ToPort: "80"
+          SourceSecurityGroupId: !Ref "GenericLoadBalancer"
+        -
+          Description: "HTTPS Access from Generic ALB"
+          IpProtocol: "tcp"
+          FromPort: "443"
+          ToPort: "443"
+          SourceSecurityGroupId: !Ref "GenericLoadBalancer"
+        -
+          Description: "SSH Access from VPC Id"
+          IpProtocol: "tcp"
+          FromPort: "22"
+          ToPort: "22"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-vpc-cidr"
+        -
+          Description: "ICMP access"
+          IpProtocol: "icmp"
+          FromPort: "-1"
+          ToPort: "-1"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-vpc-cidr"
+      SecurityGroupEgress:
+        -
+          Description: "HTTP Access to Generic ALB"
+          IpProtocol: "tcp"
+          FromPort: "80"
+          ToPort: "80"
+          SourceSecurityGroupId: !Ref "GenericLoadBalancer"
+        -
+          Description: "HTTP Access to Generic ALB"
+          IpProtocol: "tcp"
+          FromPort: "443"
+          ToPort: "443"
+          SourceSecurityGroupId: !Ref "GenericLoadBalancer"
+        -
+          Description: "SSH Access to VPC Id"
+          IpProtocol: "tcp"
+          FromPort: "22"
+          ToPort: "22"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-vpc-cidr"
+        -
+          Description: "ICMP access"
+          IpProtocol: "icmp"
+          FromPort: "-1"
+          ToPort: "-1"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-vpc-cidr"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "wordpress", "instance", "sg" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "Vpc"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+  DatabaseInstances:
+    Type: "AWS::EC2::SecurityGroup"
+    DependsOn: GenericLoadBalancer
+    Properties:
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${Vpc}-vpc-id"
+      GroupName: !Join [ "-", [ !Ref "Vpc", "database", "instance", "sg" ] ]
+      GroupDescription: !Join [ " ", [ !Ref "Vpc", "database instance security group rules" ] ]
+      SecurityGroupIngress:
+        -
+          Description: "MYSQL access from Office WAN"
+          IpProtocol: "tcp"
+          FromPort: "3306"
+          ToPort: "3306"
+          CidrIp: !Ref "OfficeWAN"
+        -
+          Description: "MYSQL access from application subnet 1"
+          IpProtocol: "tcp"
+          FromPort: "3306"
+          ToPort: "3306"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-application-subnet-cidr-1-id"
+        -
+          Description: "MYSQL access from application subnet 2"
+          IpProtocol: "tcp"
+          FromPort: "3306"
+          ToPort: "3306"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-application-subnet-cidr-2-id"
+      SecurityGroupEgress:
+        -
+          Description: "MYSQL access to Office WAN"
+          IpProtocol: "tcp"
+          FromPort: "3306"
+          ToPort: "3306"
+          CidrIp: !Ref "OfficeWAN"
+        -
+          Description: !Join [ "", [ "MYSQL access to ", !Ref "Vpc", "-vpc application subnet 1" ] ]
+          IpProtocol: "tcp"
+          FromPort: "3306"
+          ToPort: "3306"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-application-subnet-cidr-1-id"
+        -
+          Description: !Join [ "", [ "MYSQL access to ", !Ref "Vpc", "-vpc application subnet 2" ] ]
+          IpProtocol: "tcp"
+          FromPort: "3306"
+          ToPort: "3306"
+          CidrIp:
+            Fn::ImportValue:
+              !Sub "${Vpc}-application-subnet-cidr-2-id"
+      Tags:
+        - 
+          Key: Name
+          Value: !Join [ "-", [ !Ref "Vpc", "database", "instance", "sg" ] ]
+        -
+          Key: Company
+          Value: !FindInMap [ "TagValues", "Details", "Company" ]
+        -
+          Key: Department
+          Value: !FindInMap [ "TagValues", "Details", "Department" ]
+        -
+          Key: Product
+          Value: !FindInMap [ "TagValues", "Details", "Product" ]
+        -
+          Key: Application
+          Value: !FindInMap [ "TagValues", "Details", "Application" ]
+        -
+          Key: CostCenter
+          Value: !FindInMap [ "TagValues", "Details", "CostCenter" ]
+        -
+          Key: Environment
+          Value: !Ref "Vpc"
+        -
+          Key: Region
+          Value: !Ref "AWS::Region"
+
+Outputs:
+
+  JumpHostAccess:
+    Description: "Remote Control Access Security Group"
+    Value: !Ref "JumpHostAccess"
+    Export:
+      Name: !Join [ "", [ !Ref "Vpc", "-jumphost-access-sg-id" ] ]
+
+  InternetAccess:
+    Description: "Internet Access Security Group"
+    Value: !Ref "InternetAccess"
+    Export:
+      Name: !Join [ "", [ !Ref "Vpc", "-internet-access-sg-id" ] ]
+
+  GenericLoadBalancerAccess:
+    Description: "Generic Load Balancer Access Security Group"
+    Value: !Ref "GenericLoadBalancer"
+    Export:
+      Name: !Join [ "", [ !Ref "Vpc", "-load-balancer-sg-id" ] ]
+
+  ECSInstanceAccess:
+    Description: "Generic ECS Instance Access Security Group"
+    Value: !Ref "ECSInstances"
+    Export:
+      Name: !Join [ "", [ !Ref "Vpc", "-ecs-instance-sg-id" ] ]
+
+  WordpressInstanceAccess:
+    Description: "Generic Wordpress Access Security Group"
+    Value: !Ref "WordpressInstance"
+    Export:
+      Name: !Join [ "", [ !Ref "Vpc", "-wordpress-instance-sg-id" ] ]
+
+  DatabaseInstanceAccess:
+      Description: "Generic MYSQL Access Security Group"
+      Value: !Ref "DatabaseInstances"
+      Export:
+        Name: !Join [ "", [ !Ref "Vpc", "-database-instance-sg-id" ] ]
